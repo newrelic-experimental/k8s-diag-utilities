@@ -193,10 +193,14 @@ for pod_name in $pods
     kubectl get events --all-namespaces --sort-by='.lastTimestamp'  | grep -i $pod_name
     done
 
-gzip -9 -c pixie_diag_$timestamp.log > pixie_diag_$timestamp.log.gzip
+PIXIE_COLLECT_LOGS=$(ls -tr | grep pixie_logs | tail -n 1)
+tar -czf pixie_diag_$timestamp.tar.gz pixie_diag_$timestamp.log $PIXIE_COLLECT_LOGS
+
+if [ $? -eq 0 ]; then
+  rm pixie_diag_$timestamp.log $PIXIE_COLLECT_LOGS
+fi
 
 echo -e "\n*****************************************************\n"
-echo -e "File created = pixie_diag_<timestamp>.log\n"
-echo -e "File created = pixie_diag_<timestamp>.log.gzip\n"
+echo -e "Please attach the file pixie_diag_$timestamp.tar.gz to your New Relic Support Case.\n"
 echo -e "*****************************************************\n"
 echo "End pixie-diag"
