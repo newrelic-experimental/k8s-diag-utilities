@@ -21,8 +21,4 @@ chmod +x kube-diag.sh
 
 # Output
 
-`kube-diag.sh` outputs to terminal and creates two files:
-
-- kube_diag_<date>.log <-- stdout to file
-
-- kube_diag_logs_<date>.gzip <-- logs to gzip
+A file named `kube_diag_<timestamp>.tar.gz`
