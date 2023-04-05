@@ -153,7 +153,7 @@ px_deployments=$(kubectl get deployments -n px-operator | awk '{print $1}' | tai
 for deployment_name in $nr_deployments $olm_deployments $px_deployments
   do
     # Get logs from deployments
-    if [[ $deployment_name =~ ^newrelic-bundle-nri-kube-events.*$ ]];
+    if [[ $deployment_name =~ ^.*nri-kube-events.*$ ]];
     then
       echo -e "\n*****************************************************\n"
       echo -e "Logs from $deployment_name container: kube-events\n"
