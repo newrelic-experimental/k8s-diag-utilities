@@ -4,11 +4,18 @@ A simple bash script that checks the health of a Pixie-enabled cluster.
 
 The script runs standard Kubernetes commands in the namespace that Pixie is installed in and creates an output file.
 
-# Usage
+# Optional
+
+If you have the `px` CLI installed, make sure you are authenticated by running:
 
 ```
-./pixie-diag.sh <namespace>
+px auth login
+px run px/cluster
 ```
+
+You should see output from the cluster when running the `px run px/cluster` command.  This helps 
+
+# Usage
 
 Run from a terminal with `kubectl` access to cluster. The namespace will typically be either `px` or `newrelic`, depending on your installation.
 ```
@@ -19,8 +26,4 @@ chmod +x pixie-diag.sh
 
 # Output
 
-`pixie-diag.sh` outputs to terminal and creates two files:
-
-- `pixie_diag_<date>.log` <-- stdout to file
-
-- `pixie_logs_<date>.gzip` <-- logs to gzip
+A file named `pixie_diag_<timestamp>.tar.gz`
