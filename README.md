@@ -1,8 +1,8 @@
 [![New Relic Experimental header](https://github.com/newrelic/opensource-website/raw/master/src/images/categories/Experimental.png)](https://opensource.newrelic.com/oss-category/#new-relic-experimental)
 
-# Pixie Utilities
+# K8s Diag Utilities
 
-A repository of utilities related to troubleshooting Pixie installation issues.
+A repository of utilities related to troubleshooting Kubernetes and Pixie installation issues.
 
 ## Support
 
