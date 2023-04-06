@@ -13,7 +13,7 @@ px auth login
 px run px/cluster
 ```
 
-You should see output from the cluster when running the `px run px/cluster` command.  This helps 
+This enables `pixie-diag.sh` to provide some additional logging specific to Pixie.  You should see output from the cluster when running the `px run px/cluster` command if you've authenticated successfully.  
 
 # Usage
 
