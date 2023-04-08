@@ -3,7 +3,6 @@
 # kube-diag.sh assists in troubleshooting Kubernetes clusters and New Relic Kubernetes integration installations.
 # Based on pixie-diag.sh by pixie-diag authors (https://github.com/wreckedred/pixie-diag)
 
-
 # check for namespace
 if [ -z "$1" ]
   then
@@ -199,7 +198,7 @@ for deployment_name in $nr_deployments
       kubectl logs --tail=50 deployments/$deployment_name -c forwarder -n $namespace
     else
       ns=$namespace
-      
+
       echo -e "\n*****************************************************\n"
       echo -e "Logs from $deployment_name\n"
       echo -e "*****************************************************\n"
