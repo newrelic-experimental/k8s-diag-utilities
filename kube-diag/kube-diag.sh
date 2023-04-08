@@ -220,6 +220,36 @@ for pod_name in $pods
     kubectl get events --all-namespaces --sort-by='.lastTimestamp'  | grep -i $pod_name
     done
 
+echo -e "\n*****************************************************\n"
+echo -e "Checking ReplicaSets in namespace $namespace\n"
+echo -e "*****************************************************\n"
+
+kubectl get replicasets -n $namespace
+
+echo -e "\n*****************************************************\n"
+echo -e "Checking resource quotas in namespace $namespace\n"
+echo -e "*****************************************************\n"
+
+kubectl get resourcequota -n $namespace
+
+echo -e "\n*****************************************************\n"
+echo -e "Checking services in namespace $namespace\n"
+echo -e "*****************************************************\n"
+
+kubectl get services -n $namespace
+
+echo -e "\n*****************************************************\n"
+echo -e "Checking stateful sets in namespace $namespace\n"
+echo -e "*****************************************************\n"
+
+kubectl get statefulsets -n $namespace
+
+echo -e "\n*****************************************************\n"
+echo -e "Checking persistent volumes and claims in namespace $namespace\n"
+echo -e "*****************************************************\n"
+
+kubectl get pv,pvc -n $namespace
+
 gzip -9 -c kube_diag_$timestamp.log > kube_diag_$timestamp.log.gzip
 
 echo -e "\n*****************************************************\n"
