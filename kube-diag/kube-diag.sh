@@ -98,6 +98,16 @@ if [[ "$MEMORY" -lt 7950912 ]]; then
 echo "Node with less than 8 Gb of memory, got ${MEMORY}."
 fi
 
+# Get basic pod, deployment, and daemonset information in the specified namespace
+echo "Pods in namespace $namespace:"
+kubectl get pods -o wide -n $namespace
+
+echo "Deployments in namespace $namespace:"
+kubectl get deployments -o wide -n $namespace
+
+echo "DaemonSets in namespace $namespace:"
+kubectl get daemonsets -o wide -n $namespace
+
 # pods not running
 podsnr=$(kubectl get pods -n newrelic | grep -v Running | tail -n +2 | awk '{print $1}')
 
