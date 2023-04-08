@@ -40,6 +40,46 @@ echo -e "\n*****************************************************\n"
 echo -e "Key Information\n"
 echo -e "*****************************************************\n"
 
+# Get Cluster name
+CLUSTER_NAME=$(kubectl config current-context)
+echo "Cluster name: $CLUSTER_NAME"
+
+# Get kubectl version
+echo "Kubectl version:"
+kubectl version
+
+# Detect K8s Cluster 'flavor'
+KUBE_FLAVOR=""
+if kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "eks.amazonaws.com"
+then
+    KUBE_FLAVOR="EKS"
+elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "kubernetes.azure.com"
+then
+    KUBE_FLAVOR="AKS"
+elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "cloud.google.com"
+then
+    KUBE_FLAVOR="GKE"
+elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "minikube.k8s.io"
+then
+    KUBE_FLAVOR="Minikube"
+elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "container.oracle.com/managed=true"
+then
+    KUBE_FLAVOR="OKE"
+elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "node-role.kubernetes.io/master"
+then
+    if kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "beta.kubernetes.io/os=linux"
+    then
+        KUBE_FLAVOR="OpenShift"
+    fi
+elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "kops.k8s.io"
+then
+    KUBE_FLAVOR="kOps"
+else
+    KUBE_FLAVOR="Self-hosted"
+fi
+
+echo "Kubernetes cluster flavor: $KUBE_FLAVOR"
+
 nodes=$(kubectl get nodes | awk '{print $1}' | tail -n +2)
 
 # check node count
