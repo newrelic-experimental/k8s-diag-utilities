@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# kube-diag.sh assists in troubleshooting Kubernetes clusters and New Relic Kubernetes integration installations.
+# kube-diag.sh assists in troubleshooting Kubernetes clusters and New Relic Kubernetes integration inamespacetallationamespace.
 # Based on pixie-diag.sh by pixie-diag authors (https://github.com/wreckedred/pixie-diag)
 
 # check for namespace
@@ -40,44 +40,44 @@ echo -e "Key Information\n"
 echo -e "*****************************************************\n"
 
 # Get Cluster name
-CLUSTER_NAME=$(kubectl config current-context)
-echo "Cluster name: $CLUSTER_NAME"
+cluster_name=$(kubectl config current-context)
+echo "Cluster name: $cluster_name"
 
 # Get kubectl version
 echo "Kubectl version:"
 kubectl version
 
 # Detect K8s Cluster 'flavor'
-KUBE_FLAVOR=""
+kube_flavor=""
 if kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "eks.amazonaws.com"
 then
-    KUBE_FLAVOR="EKS"
+    kube_flavor="EKS"
 elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "kubernetes.azure.com"
 then
-    KUBE_FLAVOR="AKS"
+    kube_flavor="AKS"
 elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "cloud.google.com"
 then
-    KUBE_FLAVOR="GKE"
+    kube_flavor="GKE"
 elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "minikube.k8s.io"
 then
-    KUBE_FLAVOR="Minikube"
+    kube_flavor="Minikube"
 elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "container.oracle.com/managed=true"
 then
-    KUBE_FLAVOR="OKE"
+    kube_flavor="OKE"
 elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "node-role.kubernetes.io/master"
 then
     if kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "beta.kubernetes.io/os=linux"
     then
-        KUBE_FLAVOR="OpenShift"
+        kube_flavor="Openamespacehift"
     fi
 elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "kops.k8s.io"
 then
-    KUBE_FLAVOR="kOps"
+    kube_flavor="kOps"
 else
-    KUBE_FLAVOR="Self-hosted"
+    kube_flavor="Self-hosted"
 fi
 
-echo "Kubernetes cluster flavor: $KUBE_FLAVOR"
+echo "Kubernetes cluster flavor: $kube_flavor"
 
 nodes=$(kubectl get nodes | awk '{print $1}' | tail -n +2)
 
@@ -91,21 +91,21 @@ if [ $nodecount -gt 100 ]
 fi
 
 # check node memory capacity
-MEMORY=$(kubectl get nodes -o jsonpath='{.items[0].status.capacity.memory}' | sed 's/Ki$//')
-echo "MEMORY=$MEMORY"
-if [[ "$MEMORY" -lt 7950912 ]]; then
-echo "Node with less than 8 Gb of memory, got ${MEMORY}."
+memory=$(kubectl get nodes -o jsonpath='{.items[0].status.capacity.memory}' | sed 's/Ki$//')
+echo "Memory=$memory"
+if [[ "$memory" -lt 7950912 ]]; then
+echo "Node with less than 8 Gb of memory, got ${memory}."
 fi
 
-# Get basic pod, deployment, and daemonset information in the specified namespace
+# Get basic pod, deployment, and daemonamespaceet information in the specified namespace
 echo "Pods in namespace $namespace:"
 kubectl get pods -o wide -n $namespace
 
 echo "Deployments in namespace $namespace:"
 kubectl get deployments -o wide -n $namespace
 
-echo "DaemonSets in namespace $namespace:"
-kubectl get daemonsets -o wide -n $namespace
+echo "Daemonamespaceets in namespace $namespace:"
+kubectl get daemonamespaceets -o wide -n $namespace
 
 # pods not running
 podsnr=$(kubectl get pods -n newrelic | grep -v Running | tail -n +2 | awk '{print $1}')
@@ -132,9 +132,9 @@ for node_name in $nodes
     kubectl describe node $node_name | grep -i 'Kernel Version\|OS Image\|Operating System\|Architecture\|Container Runtime Version\|Kubelet Version'
     done
 
-# Check Allocated resources Available/Consumed
+# Check Allocated resources Available/Conamespaceumed
 echo -e "\n*****************************************************\n"
-echo -e "Checking Allocated resources Available/Consumed\n"
+echo -e "Checking Allocated resources Available/Conamespaceumed\n"
 echo -e "*****************************************************\n"
 
 for node_name in $nodes
@@ -183,6 +183,51 @@ done
 
 nr_deployments=$(kubectl get deployments -n $namespace | awk '{print $1}' | tail -n +2)
 
+function get_newrelic_resources_info() {
+  local namespace="$1"
+
+  # Get the list of pods
+  nrk8s_pods=$(kubectl get pods -n "$namespace" -o jsonpath='{.items[*].metadata.name}')
+
+  # Loop through the pods
+  for pod in $nrk8s_pods; do
+    echo -e "\n*****************************************************\n"
+    echo -e "Describe and logs for pod: $pod\n"
+    echo -e "*****************************************************\n"
+
+    # Describe the pod
+    kubectl describe pod "$pod" -n "$namespace"
+
+    # Get container names in the pod
+    containers=$(kubectl get pods "$pod" -n "$namespace" -o jsonpath='{.spec.containers[*].name}')
+
+    # Loop through the containers and print logs
+    for container in $containers; do
+      echo -e "\nLogs from container: $container\n"
+      kubectl logs --tail=50 "$pod" -c "$container" -n "$namespace"
+    done
+
+    echo -e "\n*****************************************************\n"
+    echo -e "Events for pod: $pod\n"
+    echo -e "*****************************************************\n"
+
+    # Get events for the pod
+    kubectl get events --all-namespaces --sort-by='.lastTimestamp' | grep -i "$pod"
+  done
+
+  # Describe daemonamespaceets
+  echo -e "\n*****************************************************\n"
+  echo -e "Describe daemonamespaceets in namespace: $namespace\n"
+  echo -e "*****************************************************\n"
+  kubectl describe daemonamespaceets -n "$namespace"
+
+  # Describe deployments
+  echo -e "\n*****************************************************\n"
+  echo -e "Describe deployments in namespace: $namespace\n"
+  echo -e "*****************************************************\n"
+  kubectl describe deployments -n "$namespace"
+}
+
 for deployment_name in $nr_deployments
   do
     # Get logs from deployments
@@ -197,12 +242,12 @@ for deployment_name in $nr_deployments
       echo -e "*****************************************************\n"
       kubectl logs --tail=50 deployments/$deployment_name -c forwarder -n $namespace
     else
-      ns=$namespace
+      namespace=$namespace
 
       echo -e "\n*****************************************************\n"
       echo -e "Logs from $deployment_name\n"
       echo -e "*****************************************************\n"
-      kubectl logs --tail=50 deployments/$deployment_name -n $ns
+      kubectl logs --tail=50 deployments/$deployment_name -n $namespace
     fi
   done
 
