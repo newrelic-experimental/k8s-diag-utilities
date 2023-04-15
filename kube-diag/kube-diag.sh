@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# kube-diag.sh assists in troubleshooting Kubernetes clusters and New Relic Kubernetes integration inamespacetallationamespace.
+# kube-diag.sh assists in troubleshooting Kubernetes clusters and New Relic Kubernetes integration installations.
 # Based on pixie-diag.sh by pixie-diag authors (https://github.com/wreckedred/pixie-diag)
 
 # check for namespace
@@ -68,7 +68,7 @@ elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "node
 then
     if kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "beta.kubernetes.io/os=linux"
     then
-        kube_flavor="Openamespacehift"
+        kube_flavor="OpenShift"
     fi
 elif kubectl get nodes -o jsonpath='{.items[0].metadata.labels}' | grep -q "kops.k8s.io"
 then
@@ -97,15 +97,15 @@ if [[ "$memory" -lt 7950912 ]]; then
 echo "Node with less than 8 Gb of memory, got ${memory}."
 fi
 
-# Get basic pod, deployment, and daemonamespaceet information in the specified namespace
+# Get basic pod, deployment, and daemonset information in the specified namespace
 echo "Pods in namespace $namespace:"
 kubectl get pods -o wide -n $namespace
 
 echo "Deployments in namespace $namespace:"
 kubectl get deployments -o wide -n $namespace
 
-echo "Daemonamespaceets in namespace $namespace:"
-kubectl get daemonamespaceets -o wide -n $namespace
+echo "Daemonsets in namespace $namespace:"
+kubectl get daemonsets -o wide -n $namespace
 
 # pods not running
 podsnr=$(kubectl get pods -n newrelic | grep -v Running | tail -n +2 | awk '{print $1}')
@@ -132,9 +132,9 @@ for node_name in $nodes
     kubectl describe node $node_name | grep -i 'Kernel Version\|OS Image\|Operating System\|Architecture\|Container Runtime Version\|Kubelet Version'
     done
 
-# Check Allocated resources Available/Conamespaceumed
+# Check Allocated resources Available/Consumed
 echo -e "\n*****************************************************\n"
-echo -e "Checking Allocated resources Available/Conamespaceumed\n"
+echo -e "Checking Allocated resources Available/Consumed\n"
 echo -e "*****************************************************\n"
 
 for node_name in $nodes
@@ -215,11 +215,11 @@ function get_newrelic_resources_info() {
     kubectl get events --all-namespaces --sort-by='.lastTimestamp' | grep -i "$pod"
   done
 
-  # Describe daemonamespaceets
+  # Describe daemonsets
   echo -e "\n*****************************************************\n"
-  echo -e "Describe daemonamespaceets in namespace: $namespace\n"
+  echo -e "Describe daemosets in namespace: $namespace\n"
   echo -e "*****************************************************\n"
-  kubectl describe daemonamespaceets -n "$namespace"
+  kubectl describe daemonsets -n "$namespace"
 
   # Describe deployments
   echo -e "\n*****************************************************\n"
