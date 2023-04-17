@@ -12,7 +12,7 @@ The output can be helpful in troubleshooting issues.
 kube-diag.sh <namespace>
 ```
 
-Run from instance with access to cluster. The namespace will typically be either `px` or `newrelic`, depending on your installation.
+Run from instance with access to cluster. This is typically the system where you run `kubectl` or `helm` commands. The referenced namespace will typically be `newrelic`, but you may need to update it if you've installed to a different namespace.
 ```
 curl -o kube-diag.sh -s https://raw.githubusercontent.com/newrelic-experimental/k8s-diag-utilities/main/kube-diag/kube-diag.sh
 chmod +x kube-diag.sh
