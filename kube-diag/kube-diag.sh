@@ -97,16 +97,6 @@ if [[ "$memory" -lt 7950912 ]]; then
 echo "Node with less than 8 Gb of memory, got ${memory}."
 fi
 
-# Get basic pod, deployment, and daemonset information in the specified namespace
-echo "Pods in namespace $namespace:"
-kubectl get pods -o wide -n $namespace
-
-echo "Deployments in namespace $namespace:"
-kubectl get deployments -o wide -n $namespace
-
-echo "Daemonsets in namespace $namespace:"
-kubectl get daemonsets -o wide -n $namespace
-
 # pods not running
 podsnr=$(kubectl get pods -n newrelic | grep -v Running | tail -n +2 | awk '{print $1}')
 
@@ -165,7 +155,6 @@ for node_name in $nodes
   done
 
 #Get all Kubernetes resources in namespace
-
 echo -e "\n*****************************************************\n"
 echo -e "Check all Kubernetes resources in namespace\n"
 echo -e "*****************************************************\n"
@@ -175,7 +164,7 @@ for i in $(kubectl api-resources --verbs=list -o name | grep -v "events.events.k
 do
   echo -e "\nResource:" $i;
   # An array of important namespace resources
-  array=("configmaps" "rolebindings.rbac.authorization.k8s.io" "endpoints" "secrets" "networkpolicies" "serviceaccounts" "pods" "endpointslices" "deployments.apps" "horizontalpodautoscalers" "ingresses" "networkpolicies")
+  array=("configmaps" "rolebindings.rbac.authorization.k8s.io" "endpoints" "secrets" "networkpolicies" "serviceaccounts" "pods" "endpointslices" "deployments.apps" "horizontalpodautoscalers" "ingresses" "networkpolicies" "daemonsets.apps" "replicasets.apps" "resourcequotas" "services" "statefulsets.apps" "persistentvolumes" "persistentvolumeclaims")
   str=$'resources\n=================='
   echo -e "\n $namespace $str"
   kubectl -n $namespace get --ignore-not-found ${i};
@@ -264,36 +253,6 @@ for pod_name in $pods
     echo "Events from pod name $pod_name"
     kubectl get events --all-namespaces --sort-by='.lastTimestamp'  | grep -i $pod_name
     done
-
-echo -e "\n*****************************************************\n"
-echo -e "Checking ReplicaSets in namespace $namespace\n"
-echo -e "*****************************************************\n"
-
-kubectl get replicasets -n $namespace
-
-echo -e "\n*****************************************************\n"
-echo -e "Checking resource quotas in namespace $namespace\n"
-echo -e "*****************************************************\n"
-
-kubectl get resourcequota -n $namespace
-
-echo -e "\n*****************************************************\n"
-echo -e "Checking services in namespace $namespace\n"
-echo -e "*****************************************************\n"
-
-kubectl get services -n $namespace
-
-echo -e "\n*****************************************************\n"
-echo -e "Checking stateful sets in namespace $namespace\n"
-echo -e "*****************************************************\n"
-
-kubectl get statefulsets -n $namespace
-
-echo -e "\n*****************************************************\n"
-echo -e "Checking persistent volumes and claims in namespace $namespace\n"
-echo -e "*****************************************************\n"
-
-kubectl get pv,pvc -n $namespace
 
 gzip -9 -c kube_diag_$timestamp.log > kube_diag_$timestamp.log.gzip
 
