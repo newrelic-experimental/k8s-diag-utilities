@@ -83,9 +83,9 @@ nodes=$(kubectl get nodes | awk '{print $1}' | tail -n +2)
 
 # check node count
 nodecount=$(kubectl get nodes --selector=kubernetes.io/hostname!=node_host_name | tail -n +2 | wc -l)
-echo "Cluster has "$nodecount" nodes"
+echo "Cluster has $nodecount nodes"
 
-if [ $nodecount -gt 100 ]
+if [ "$nodecount" -gt 100 ]
   then
     echo "Node limit is greater than 100"
 fi
