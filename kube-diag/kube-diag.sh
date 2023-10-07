@@ -32,7 +32,7 @@ echo -e "\n*****************************************************\n"
 echo -e "Checking HELM releases\n"
 echo -e "*****************************************************\n"
 
-helm list -A -n $namespace
+helm list -A -n "$namespace"
 
 # Check System Info
 echo -e "\n*****************************************************\n"
@@ -101,13 +101,13 @@ fi
 podsnr=$(kubectl get pods -n newrelic | grep -v Running | tail -n +2 | awk '{print $1}')
 
 # count of pods not running
-podsnrc=$(printf '%s\n' $podsnr | wc -l)
+podsnrc=$(printf '%s\n' "$podsnr" | wc -l)
 
-if [ $podsnrc -gt 0 ]
+if [ "$podsnrc" -gt 0 ]
   then
     echo "There are $podsnrc pods not running!"
     echo "These pods are not running"
-    printf '%s\n' $podsnr
+    printf '%s\n' "$podsnr"
 fi
 
 echo -e "\n*****************************************************\n"
@@ -119,7 +119,7 @@ for node_name in $nodes
     # Get K8s version and Kernel from nodes
     echo ""
     echo "System Info from $node_name"
-    kubectl describe node $node_name | grep -i 'Kernel Version\|OS Image\|Operating System\|Architecture\|Container Runtime Version\|Kubelet Version'
+    kubectl describe node "$node_name" | grep -i 'Kernel Version\|OS Image\|Operating System\|Architecture\|Container Runtime Version\|Kubelet Version'
     done
 
 # Check Allocated resources Available/Consumed
@@ -132,7 +132,7 @@ for node_name in $nodes
     # Get Allocated resources from nodes
     echo ""
     echo "Node Allocated resources info from $node_name"
-    kubectl describe node $node_name | grep "Allocated resources" -A 9
+    kubectl describe node "$node_name" | grep "Allocated resources" -A 9
   done
 
 # Get kubectl describe node output for 3 nodes
@@ -147,7 +147,7 @@ for node_name in $nodes
     then
       # Get node detail from a sampling of nodes
       echo -e "\nCollecting node detail from $node_name"
-      kubectl describe node $node_name
+      kubectl describe node "$node_name"
       let "nodedetailcounter+=1"
     else
       break
@@ -162,15 +162,15 @@ echo -e "*****************************************************\n"
 # Get all api-resources in namespace
 for i in $(kubectl api-resources --verbs=list -o name | grep -v "events.events.k8s.io" | grep -v "events" | sort | uniq);
 do
-  echo -e "\nResource:" $i;
+  echo -e "\nResource:" "$i";
   # An array of important namespace resources
   array=("configmaps" "rolebindings.rbac.authorization.k8s.io" "endpoints" "secrets" "networkpolicies" "serviceaccounts" "pods" "endpointslices" "deployments.apps" "horizontalpodautoscalers" "ingresses" "networkpolicies" "daemonsets.apps" "replicasets.apps" "resourcequotas" "services" "statefulsets.apps" "persistentvolumes" "persistentvolumeclaims")
   str=$'resources\n=================='
   echo -e "\n $namespace $str"
-  kubectl -n $namespace get --ignore-not-found ${i};
+  kubectl -n "$namespace" get --ignore-not-found "${i}";
 done
 
-nr_deployments=$(kubectl get deployments -n $namespace | awk '{print $1}' | tail -n +2)
+nr_deployments=$(kubectl get deployments -n "$namespace" | awk '{print $1}' | tail -n +2)
 
 function get_newrelic_resources_info() {
   local namespace="$1"
@@ -225,18 +225,18 @@ for deployment_name in $nr_deployments
       echo -e "\n*****************************************************\n"
       echo -e "Logs from $deployment_name container: kube-events\n"
       echo -e "*****************************************************\n"
-      kubectl logs --tail=50 deployments/$deployment_name -c kube-events -n $namespace
+      kubectl logs --tail=50 deployments/"$deployment_name" -c kube-events -n "$namespace"
       echo -e "\n*****************************************************\n"
       echo -e "Logs from $deployment_name container: forwarder\n"
       echo -e "*****************************************************\n"
-      kubectl logs --tail=50 deployments/$deployment_name -c forwarder -n $namespace
+      kubectl logs --tail=50 deployments/"$deployment_name" -c forwarder -n "$namespace"
     else
       namespace=$namespace
 
       echo -e "\n*****************************************************\n"
       echo -e "Logs from $deployment_name\n"
       echo -e "*****************************************************\n"
-      kubectl logs --tail=50 deployments/$deployment_name -n $namespace
+      kubectl logs --tail=50 deployments/"$deployment_name" -n "$namespace"
     fi
   done
 
@@ -244,17 +244,17 @@ echo -e "\n*****************************************************\n"
 echo -e "Checking pod events\n"
 echo -e "*****************************************************\n"
 
-pods=$(kubectl get pods -n $namespace | awk '{print $1}' | tail -n +2)
+pods=$(kubectl get pods -n "$namespace" | awk '{print $1}' | tail -n +2)
 
 for pod_name in $pods
   do
     # Get events from pods in New Relic namespace
     echo ""
     echo "Events from pod name $pod_name"
-    kubectl get events --all-namespaces --sort-by='.lastTimestamp'  | grep -i $pod_name
+    kubectl get events --all-namespaces --sort-by='.lastTimestamp'  | grep -i "$pod_name"
     done
 
-gzip -9 -c kube_diag_$timestamp.log > kube_diag_$timestamp.log.gzip
+gzip -9 -c "kube_diag_$timestamp.log" > "kube_diag_$timestamp.log.gzip"
 
 echo -e "\n*****************************************************\n"
 echo -e "File created = kube_diag_<timestamp>.log\n"
