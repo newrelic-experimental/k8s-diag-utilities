@@ -32,7 +32,7 @@ echo -e "\n*****************************************************\n"
 echo -e "Checking HELM releases\n"
 echo -e "*****************************************************\n"
 
-helm list -A -n $namespace
+helm list -n $namespace
 
 # Check System Info
 echo -e "\n*****************************************************\n"
