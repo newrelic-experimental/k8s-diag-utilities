@@ -23,7 +23,7 @@ echo -e "*****************************************************\n"
 
 # Check for px
 if ! [ -x "$(command -v px)" ]; then
-  echo 'Error: px is not installed.' >&2
+  echo 'px cli is not installed, skipping optional px/agent_status check.' >&2
 else
   echo "Get agent status from Pixie"
   px run px/agent_status
@@ -40,7 +40,7 @@ echo -e "\n*****************************************************\n"
 echo -e "Checking HELM releases\n"
 echo -e "*****************************************************\n"
 
-helm list -A -n $namespace
+helm list -n $namespace
 
 # Check System Info
 echo -e "\n*****************************************************\n"
@@ -66,16 +66,16 @@ echo "Pixie requires nodes with 8 Gb of memory or more, got ${MEMORY}."
 fi
 
 # pods not running
-podsnr=$(kubectl get pods -n newrelic | grep -v Running | tail -n +2 | awk '{print $1}')
+podsnr=$(kubectl get pods -n $namespace --no-headers | grep -v Running)
 
 # count of pods not running
-podsnrc=$(printf '%s\n' $podsnr | wc -l)
+podsnrc=$(echo $podsnr | wc -l | awk '{print $1}')
 
 if [ $podsnrc -gt 0 ]
   then
-    echo "There are $podsnrc pods not running!"
-    echo "These pods are not running"
-    printf '%s\n' $podsnr
+    echo "There are $podsnrc pods not running:"
+    echo $podsnr
+    echo ""
 fi
 
 echo -e "\n*****************************************************\n"
@@ -122,28 +122,28 @@ for node_name in $nodes
     fi
   done
 
-#Get all Kubernetes resources in namespace
+# Define the array of namespaces
+namespaces=("olm" "px-operator" $namespace)
 
+# Get all Kubernetes resources in each namespace
 echo -e "\n*****************************************************\n"
-echo -e "Check all Kubernetes resources in namespace\n"
+echo -e "Check all Kubernetes resources in namespaces olm, px-operator and $namespace\n"
 echo -e "*****************************************************\n"
 
-# Get all api-resources in namespace
-for i in $(kubectl api-resources --verbs=list -o name | grep -v "events.events.k8s.io" | grep -v "events" | sort | uniq);
+# Get all namespaced api-resources
+for i in $(kubectl api-resources --verbs=list --namespaced=true -o name | grep -v "events.events.k8s.io" | grep -v "events" | sort | uniq);
 do
-  echo -e "\nResource:" $i;
-  # An array of important namespace resources
-  array=("configmaps" "rolebindings.rbac.authorization.k8s.io" "endpoints" "secrets" "networkpolicies" "serviceaccounts" "pods" "endpointslices" "deployments.apps" "horizontalpodautoscalers" "ingresses" "networkpolicies")
-  str=$'resources\n=================='
-  if [[ "${array[*]}" =~ "$i" ]]; then
-    echo -e "\n px-operator $str"
-    kubectl -n px-operator get --ignore-not-found ${i};
-    echo -e "\n $namespace $str"
-    kubectl -n $namespace get --ignore-not-found ${i};
-  else 
-    echo -e "\n $namespace $str"
-    kubectl -n $namespace get --ignore-not-found ${i};
-  fi
+  # Iterate over each namespace
+  for ns in "${namespaces[@]}"; do
+    # Get the resource list output
+    resource_output=$(kubectl -n $ns get ${i} --no-headers 2>/dev/null)
+    # Check if the output is non-empty
+    if [[ -n $resource_output ]]; then
+      echo -e "\nResource: $i in Namespace: $ns"
+      echo -e "=================="
+      echo "$resource_output"
+    fi
+  done
 done
 
 nr_deployments=$(kubectl get deployments -n $namespace | awk '{print $1}' | tail -n +2)
