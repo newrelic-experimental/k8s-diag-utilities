@@ -52,9 +52,7 @@ function get_all_k8s_resources() {
       )
 
       if [[ -n "${resource_output}" ]]; then
-        newline
-        printf "Resource: %s in Namespace: %s\n" "${resource}" "${ns}"
-        printf "==================\n"
+        my_banner "Resource: ${resource} in Namespace: ${ns}"
         printf "%s\n" "${resource_output}"
       fi
     done
