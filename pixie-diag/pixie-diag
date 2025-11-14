@@ -1,0 +1,398 @@
+#!/usr/bin/env bash
+# Rewrite of New Relic script
+function cleanup() {
+  rm -f "pixie_diag_${TIMESTAMP}.log"
+
+  # Since this is generated dynamically, we want to be careful about rm
+  [ -e "${PIXIE_COLLECT_LOGS}" ] && rm -i "${PIXIE_COLLECT_LOGS}"
+}
+
+function create_tarball() {
+  local tarball="pixie_diag_${TIMESTAMP}.tar.gz"
+  local -a files=( "pixie_diag_${TIMESTAMP}.log" )
+  [ -e "${PIXIE_COLLECT_LOGS}" ] && files+=( "${PIXIE_COLLECT_LOGS}" )
+
+  tar \
+    -czf "${tarball}" \
+    "${files[@]}"
+
+  local tar_retval="${?}"
+
+  if [ "${tar_retval}" -eq 0 ]; then
+    local msg="Please attach ${tarball} to your Support Case"
+    my_banner "${msg}"
+  fi
+
+  return "${tar_retval}"
+}
+
+function get_all_k8s_resources() {
+  local namespaces=( "${@}" )
+
+  local api_resources
+  api_resources="$( \
+    kubectl \
+      api-resources \
+      --verbs=list \
+      --namespaced=true \
+      -o name \
+    | grep -v "events" \
+    | sort -u \
+  )"
+
+  for resource in ${api_resources}; do
+    for ns in "${namespaces[@]}"; do
+      local resource_output
+      resource_output=$( \
+        kubectl \
+          -n "${ns}" \
+          get "${resource}" \
+          --no-headers \
+        2>/dev/null \
+      )
+
+      if [[ -n "${resource_output}" ]]; then
+        my_banner "Resource: ${resource} in Namespace: ${ns}"
+        printf "%s\n" "${resource_output}"
+      fi
+    done
+  done
+}
+
+function get() {
+  local obj="${1}"
+
+  if [ -z "${obj}" ]; then
+    printf "ERROR: you called get() without an object to get!"
+    exit 1
+  fi
+
+  shift
+
+  local titleized_obj
+  titleized_obj=$(titleize "${obj}")
+
+  local banner="Getting ${titleized_obj}"
+  [ "${#}" -gt 0 ] && banner+=" (${*})"
+
+  my_banner "${banner}"
+  local real_func="get_${obj}"
+  ${real_func} "${@}"
+}
+
+function list_deployments() {
+  local ns="${1:-default}"
+  kubectl -n "${ns}" get deployments "${NAMES_ONLY[@]}"
+}
+
+function get_deployment_logs() {
+  local namespaces=( "${@}" )
+
+  for ns in "${namespaces[@]}"; do
+    local deployments
+    deployments=$(list_deployments "${ns}")
+
+    for deployment in ${deployments}; do
+      local -a cmd
+      cmd=( kubectl -n "${ns}" logs --tail=50 "deployments/${deployment}" )
+
+      if ! [[ $deployment =~ ^.*nri-kube-events.*$ ]]; then
+        my_banner "Logs from ${deployment}"
+        "${cmd[@]}"
+      fi
+
+      if [[ $deployment =~ ^.*nri-kube-events.*$ ]]; then
+        for container in 'kube-events' 'forwarder'; do
+          my_banner "Logs from ${deployment} container: ${container}"
+          "${cmd[@]}" -c "${container}"
+        done
+      fi
+    done
+  done
+}
+
+function get_helm_releases() {
+  helm list -n "${NAMESPACE}"
+}
+
+function get_key_information() {
+  local nodecount
+  nodecount=$( \
+    kubectl \
+      get \
+      --no-headers \
+      nodes \
+      --selector=kubernetes.io/hostname!=node_host_name \
+    | wc -l \
+  )
+
+  printf "Cluster has %d nodes\n" "${nodecount}"
+
+  [ "${nodecount}" -gt 100 ] && printf "Node limit is greater than 100\n"
+
+  local memory
+  memory=$( \
+    kubectl \
+      get \
+      nodes \
+      -o jsonpath='{.items[0].status.capacity.memory}' \
+    | sed 's/Ki$//' \
+  )
+
+  printf "memory=%d\n" "${memory}"
+
+  if [[ "$memory" -lt 7950912 ]]; then
+    printf "Pixie requires nodes with >= 8GB RAM, got %s.\n" "${memory}"
+  fi
+
+  local pods_not_running
+  pods_not_running=$( \
+    kubectl \
+      -n "${NAMESPACE}" \
+      get \
+      pods \
+      --no-headers \
+    | grep -v Running \
+  )
+
+  local pods_not_running_count
+  pods_not_running_count=$( \
+    printf "%s" "${pods_not_running}" \
+    | wc -l \
+    | awk '{print $1}' \
+  )
+
+  if [ "${pods_not_running_count}" -gt 0 ]; then
+    printf "There are %d pods not running:\n" "${pods_not_running_count}"
+    printf "%s\n" "${pods_not_running}"
+    newline
+  fi
+}
+
+# Get node detail from a sampling of nodes
+function get_node_details() {
+  local max="${1:-3}"
+
+  for (( i = 0; i < max; i++ )); do
+    newline
+    printf "Collecting node detail from %s\n" "${NODES[${i}]}"
+    kubectl describe node "${NODES[${i}]}"
+  done
+}
+
+function get_node_information() {
+  local regex
+  regex='Kernel|OS( Image)?|Architecture|(Container Runtime|Kubelet) Version'
+
+  for node in "${NODES[@]}"; do
+    newline
+    printf "System Info from %s\n" "${node}"
+
+    kubectl \
+      describe \
+      node \
+      "${node}" \
+    | grep -iE "${regex}"
+  done
+}
+
+function get_pixie_agent_status() {
+  printf "Get agent status from Pixie\n"
+
+  if px run px/agent_status; then
+    newline
+    printf "Collect logs from Pixie\n"
+    px collect-logs
+  fi
+}
+
+function get_pod_events() {
+  local pods
+  pods=$( \
+    kubectl \
+      -n "${NAMESPACE}" \
+      get \
+      pods \
+      "${NAMES_ONLY[@]}" \
+  )
+
+  for pod in ${pods}; do
+    local events
+    events=$( \
+      kubectl \
+        get \
+        -A \
+        events \
+        --sort-by='.lastTimestamp' \
+      2>/dev/null \
+      | grep -i "${pod}"
+    )
+
+    if [ -n "${events}" ]; then
+      newline
+      printf "Events from pod name %s:\n" "${pod}"
+      printf "%s\n" "${events}"
+    fi
+
+  done
+}
+
+function get_resource_allocations() {
+  for node in "${NODES[@]}"; do
+    newline
+    printf "Node Allocated Resources Info from %s\n" "${node}"
+    kubectl describe node "${node}" | grep -i "allocated resources" -A 9
+  done
+}
+
+# This uses 'type' in case px is a shell function or alias rather than a plain
+# installed command.
+function is_px_cli_available() {
+  if ! type px >/dev/null 2>&1; then
+    printf "px cli unavailable, skipping optional px agent checks.\n" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+function latest_file_from_glob() {
+  local base="${1:-pixie_logs}"
+
+  find . \
+    -name "${base}*" \
+    -type f \
+    -printf '%T@ %p\n' \
+  | sort -n \
+  | tail -1 \
+  | cut -f2- -d' '
+}
+
+function my_banner() {
+  local msg="${1:-You Forgot to Pass a Message to my_banner()!!}"
+  local size="${2:-53}"
+
+  newline
+  printchar_ntimes '*' "${size}"
+  newline
+  printf "* %s\n" "${msg}"
+  printchar_ntimes '*' "${size}"
+  newline
+}
+
+function newline() {
+  printf "\n"
+}
+
+function printchar_ntimes() {
+  local char="${1:-*}"
+  local n="${2:-1}"
+
+  printf -v repeated '%*s' "$n" ''
+  printf '%s' "${repeated// /$char}"
+}
+
+# Helper variable for kubectl get
+function set_names_only() {
+  declare -ga NAMES_ONLY
+  NAMES_ONLY=( --no-headers -o jsonpath='{.items[*].metadata.name}' )
+}
+
+function set_namespace() {
+  if [ -z "${1}" ]; then
+    printf "You must pass a valid namespace as argument 1.\n"
+    printf "Usage: %s <namespace>\n" "${0}"
+    exit 0
+  fi
+
+  declare -g NAMESPACE="${1}"
+}
+
+function set_nodes() {
+  declare -ga NODES
+  readarray -d ' ' -t NODES < <(kubectl get no "${NAMES_ONLY[@]}")
+}
+
+function set_pixie_collect_logs() {
+  declare -g PIXIE_COLLECT_LOGS
+  PIXIE_COLLECT_LOGS=$(latest_file_from_glob pixie_logs)
+}
+
+# Useful output when running in debug mode (set -x/bash -x)
+function set_ps4() {
+  PS4='+(${BASH_SOURCE[0]}:${LINENO}): ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+}
+
+function set_timestamp() {
+  declare -g TIMESTAMP
+  TIMESTAMP=$(date +"%Y%m%d%H%M%S")
+}
+
+function start_logging() {
+  exec > >(tee -a "${PWD}/pixie_diag_${TIMESTAMP}.log") 2>&1
+}
+
+function titleize() {
+  printf '%s' "${1}" \
+  | tr '_' ' ' \
+  | sed 's/\b\(.\)/\u\1/g'
+}
+
+function validate_namespace() {
+  if ! kubectl get ns "${NAMESPACE}" >/dev/null 2>&1; then
+    local valid_namespaces
+    valid_namespaces="$( \
+      kubectl \
+        get \
+        ns \
+        "${NAMES_ONLY[@]}" \
+      2>/dev/null \
+    )"
+
+    printf "'%s' is NOT a Valid Namespace!\n" "${NAMESPACE}"
+    printf "Valid Namespaces:\n"
+
+    for ns in ${valid_namespaces}; do
+      printf "  %s\n" "${ns}"
+    done
+
+    newline
+
+    exit 1
+  fi
+
+  return 0
+}
+
+function main() {
+  set_ps4
+  set_names_only
+  set_namespace "${1}"
+  validate_namespace
+  set_timestamp
+  set_nodes
+  start_logging
+
+  if is_px_cli_available; then
+    get pixie_agent_status
+  fi
+
+  get helm_releases
+  get key_information
+  get node_information
+  get resource_allocations
+  get node_details 3
+
+  local namespaces=( 'olm' 'px-operator' "${NAMESPACE}" )
+  get all_k8s_resources "${namespaces[@]}"
+  get deployment_logs "${namespaces[@]}"
+
+  get pod_events
+
+  set_pixie_collect_logs
+  create_tarball && cleanup
+
+  my_banner "End ${0}"
+}
+
+main "${@}"
