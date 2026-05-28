@@ -17,9 +17,14 @@ case "${cmd}" in
     get)
         case "${sub}" in
 
-            ns)
+            ns|namespace)
                 if [[ "${ARGS_STR}" =~ "jsonpath" ]]; then
-                    printf "default kube-system newrelic olm px-operator"
+                    printf '{"kubernetes.io/metadata.name":"newrelic"}'
+                    exit 0
+                fi
+                if [[ "${ARGS_STR}" =~ "--show-labels" ]]; then
+                    printf "NAME       STATUS   AGE   LABELS\n"
+                    printf "newrelic   Active   10d   kubernetes.io/metadata.name=newrelic\n"
                     exit 0
                 fi
                 ns="${3:-}"
@@ -32,6 +37,20 @@ case "${cmd}" in
                 ;;
 
             no|nodes)
+                if [[ "${ARGS_STR}" =~ "kernelVersion" ]]; then
+                    printf "Node: test-node-1  Kernel: 5.15.0-91-generic  OS: Ubuntu 22.04.3 LTS  Arch: amd64\n"
+                    printf "Node: test-node-2  Kernel: 5.15.0-91-generic  OS: Ubuntu 22.04.3 LTS  Arch: amd64\n"
+                    exit 0
+                fi
+                if [[ "${ARGS_STR}" =~ "containerRuntimeVersion" ]]; then
+                    printf "Node: test-node-1  Runtime: containerd://1.6.26\n"
+                    printf "Node: test-node-2  Runtime: containerd://1.6.26\n"
+                    exit 0
+                fi
+                if [[ "${ARGS_STR}" =~ "spec.taints" ]]; then
+                    printf "Node: test-node-1\nNode: test-node-2\n"
+                    exit 0
+                fi
                 if [[ "${ARGS_STR}" =~ "metadata.name" ]]; then
                     printf "test-node-1 test-node-2\n"
                     exit 0
@@ -52,6 +71,24 @@ case "${cmd}" in
                 ;;
 
             pods)
+                # eBPF label queries — must check before generic handlers
+                if [[ "${ARGS_STR}" =~ "app=nr-ebpf-agent" ]]; then
+                    if [[ "${ARGS_STR}" =~ "--field-selector" ]]; then
+                        exit 0   # all eBPF pods Running
+                    fi
+                    if [[ "${ARGS_STR}" =~ "--no-headers" || "${ARGS_STR}" =~ "custom-columns" ]]; then
+                        printf "nr-ebpf-agent-abc12"
+                        exit 0
+                    fi
+                    if [[ "${ARGS_STR}" =~ "jsonpath" ]]; then
+                        printf "nr-ebpf-agent-abc12"
+                        exit 0
+                    fi
+                    printf "NAME                    READY   STATUS    RESTARTS   AGE\n"
+                    printf "nr-ebpf-agent-abc12     1/1     Running   0          2d\n"
+                    exit 0
+                fi
+
                 if [[ "${ARGS_STR}" =~ "jsonpath" || "${ARGS_STR}" =~ "custom-columns" ]]; then
                     printf "test-pod-1"
                     exit 0
@@ -76,14 +113,59 @@ case "${cmd}" in
                 exit 0
                 ;;
 
+            daemonset)
+                if [[ "${ARGS_STR}" =~ "nr-ebpf-agent" ]]; then
+                    if [[ "${ARGS_STR}" =~ "jsonpath" ]]; then
+                        printf "Desired: 2  Scheduled: 2  Ready: 2  Available: 2  Misscheduled: 0\n"
+                        exit 0
+                    fi
+                    printf "NAME              DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR   AGE\n"
+                    printf "nr-ebpf-agent     2         2         2       2            2           <none>          2d\n"
+                    exit 0
+                fi
+                printf "No resources found.\n"
+                exit 0
+                ;;
+
+            configmap)
+                printf "apiVersion: v1\nitems: []\n"
+                exit 0
+                ;;
+
             crds)
                 printf "nri-bundle.newrelic.com   2024-01-01\n"
                 exit 0
                 ;;
 
-            clusterrole|clusterrolebinding)
+            clusterrole)
+                if [[ "${ARGS_STR}" =~ "nr-ebpf-agent" ]]; then
+                    printf "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRole\nmetadata:\n  name: nr-ebpf-agent\n"
+                    exit 0
+                fi
                 printf "newrelic-agent   ClusterRole   2024-01-01\n"
                 exit 0
+                ;;
+
+            clusterrolebinding)
+                if [[ "${ARGS_STR}" =~ "nr-ebpf-agent" ]]; then
+                    printf "apiVersion: rbac.authorization.k8s.io/v1\nkind: ClusterRoleBinding\nmetadata:\n  name: nr-ebpf-agent\n"
+                    exit 0
+                fi
+                printf "newrelic-agent   ClusterRoleBinding   2024-01-01\n"
+                exit 0
+                ;;
+
+            serviceaccount)
+                if [[ "${ARGS_STR}" =~ "nr-ebpf-agent" ]]; then
+                    printf "apiVersion: v1\nkind: ServiceAccount\nmetadata:\n  name: nr-ebpf-agent\n  namespace: newrelic\n"
+                    exit 0
+                fi
+                exit 0
+                ;;
+
+            psp)
+                # PSP removed in K8s 1.25+ — simulate command not found
+                exit 1
                 ;;
 
             deployment,daemonset,statefulset,job,cronjob)
@@ -92,6 +174,16 @@ case "${cmd}" in
                 ;;
 
             events)
+                if [[ "${ARGS_STR}" =~ "involvedObject.name=nr-ebpf-agent" ]]; then
+                    printf "LAST SEEN   TYPE     REASON              OBJECT                        MESSAGE\n"
+                    printf "2m          Normal   SuccessfulCreate    DaemonSet/nr-ebpf-agent       Created pod: nr-ebpf-agent-abc12\n"
+                    exit 0
+                fi
+                if [[ "${ARGS_STR}" =~ "involvedObject.name=" ]]; then
+                    printf "LAST SEEN   TYPE     REASON    OBJECT                    MESSAGE\n"
+                    printf "1m          Normal   Pulled    Pod/nr-ebpf-agent-abc12   Successfully pulled image\n"
+                    exit 0
+                fi
                 exit 0
                 ;;
 

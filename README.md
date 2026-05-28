@@ -2,18 +2,18 @@
 
 # Kubernetes Diag Utilities
 
-A repository of utilities related to troubleshooting Kubernetes and Pixie installation issues.
+A repository of utilities for troubleshooting Kubernetes, Pixie, and eBPF agent installation issues.
 
 ## nrk8s-diag.sh (Unified Script)
 
-`nrk8s-diag.sh` combines both the Kubernetes and Pixie diagnostics into a single script. Use the `-k` and `-p` flags to run one or both diagnostic sets. If neither flag is specified, both are run.
+`nrk8s-diag.sh` combines Kubernetes, Pixie, and eBPF agent diagnostics into a single script. Use `-k`, `-p`, and `-e` to run specific diagnostic sets. If no flags are specified, all three are run.
 
 ### Usage
 
 Run from a terminal with `kubectl` and (optionally) `helm` access to the cluster. The namespace will typically be `newrelic`.
 
 ```bash
-# Run all diagnostics (Kubernetes + Pixie)
+# Run all diagnostics (Kubernetes + Pixie + eBPF)
 ./nrk8s-diag.sh -n newrelic
 
 # Kubernetes diagnostics only
@@ -22,16 +22,24 @@ Run from a terminal with `kubectl` and (optionally) `helm` access to the cluster
 # Pixie diagnostics only
 ./nrk8s-diag.sh -n newrelic -p
 
-# Custom Helm release name
-./nrk8s-diag.sh -n newrelic -r my-release -k
+# eBPF agent diagnostics only
+./nrk8s-diag.sh -n newrelic -e
+
+# Kubernetes + eBPF diagnostics
+./nrk8s-diag.sh -n newrelic -k -e
+
+# Custom Helm release names
+./nrk8s-diag.sh -n newrelic -r my-bundle-release -E my-ebpf-release -k -e
 ```
 
 | Flag | Description |
 |------|-------------|
 | `-n NAMESPACE` | **(Required)** Namespace where New Relic is installed |
 | `-r RELEASE_NAME` | *(Optional)* Helm release name (default: `newrelic-bundle`) |
+| `-E EBPF_RELEASE_NAME` | *(Optional)* eBPF agent Helm release name (default: `nr-ebpf-agent`) |
 | `-k` | Run Kubernetes diagnostics |
 | `-p` | Run Pixie diagnostics |
+| `-e` | Run eBPF agent diagnostics |
 
 ### Kubernetes Diagnostics (`-k`)
 
@@ -60,9 +68,30 @@ px auth login
 px run px/cluster
 ```
 
+### eBPF Agent Diagnostics (`-e`)
+
+- DaemonSet status, pod readiness, per-container restart counts, OOMKill/crash history
+- Node kernel versions with BTF/CO-RE availability analysis (kernel ≥ 5.2 → CO-RE fallback available without kernel headers; kernel < 5.2 → kernel headers required)
+- Pod logs for both the `kernel-header-installer` init container and the `nr-ebpf-agent` main container
+- Full resource descriptions (DaemonSet, Service, ConfigMaps, individual pods)
+- eBPF-specific ClusterRole, ClusterRoleBinding, and ServiceAccount
+- Scheduling analysis: DaemonSet desired vs ready vs node count, per-node taints, DaemonSet tolerations, namespace Pod Security Admission (PSA) labels (K8s 1.25+ — `restricted` mode blocks privileged pods), and PodSecurityPolicies (pre-1.25)
+- Events filtered to the `nr-ebpf-agent` DaemonSet and its pods
+- Known error pattern scan across collected pod logs: kernel header failures, BTF availability, OOMKill, permission denied, RLIMIT_MEMLOCK, connection errors, and more
+- Helm values for the eBPF release
+
+> **Note:** If the eBPF agent is deployed as part of `nri-bundle` rather than standalone, pass the bundle release name with `-E` or use `-r` for the bundle and omit `-E`.
+
 ### Output
 
 A compressed archive named `nrk8s_diag_<timestamp>.tar.gz` containing numbered log files for each diagnostic section. Attach this file to your New Relic support ticket.
+
+| File | Content |
+|------|---------|
+| `00_nrk8s_diag_*.log` | Combined stdout/stderr from the entire run |
+| `01–10_*.log` | Kubernetes diagnostics |
+| `11–15_*.log` | Pixie diagnostics |
+| `16–24_*.log` | eBPF agent diagnostics |
 
 Temporary working files are automatically cleaned up on exit, including on failure or interrupt.
 

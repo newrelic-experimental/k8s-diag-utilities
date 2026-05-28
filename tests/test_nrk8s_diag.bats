@@ -48,19 +48,38 @@ teardown() {
     [[ "${output}" =~ "my-custom-release" ]]
 }
 
+@test "default eBPF release name is nr-ebpf-agent" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    [[ "${output}" =~ "nr-ebpf-agent" ]]
+}
+
+@test "-E overrides the eBPF release name" {
+    run bash "${SCRIPT}" -n newrelic -e -E my-ebpf-release
+    [ "${status}" -eq 0 ]
+    [[ "${output}" =~ "my-ebpf-release" ]]
+}
+
 @test "startup summary shows namespace" {
     run bash "${SCRIPT}" -n newrelic -k
     [ "${status}" -eq 0 ]
     [[ "${output}" =~ "newrelic" ]]
 }
 
+@test "startup summary shows eBPF diagnostics flag" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    [[ "${output}" =~ "eBPF diagnostics" ]]
+}
+
 # ── Diagnostic mode selection ──────────────────────────────────────────────────
 
-@test "no mode flags runs both kube and pixie diagnostics" {
+@test "no mode flags runs kube, pixie, and eBPF diagnostics" {
     run bash "${SCRIPT}" -n newrelic
     [ "${status}" -eq 0 ]
     [[ "${output}" =~ "Kubernetes Diagnostics" ]]
     [[ "${output}" =~ "Pixie Diagnostics" ]]
+    [[ "${output}" =~ "eBPF Agent Diagnostics" ]]
 }
 
 @test "-k runs only Kubernetes diagnostics" {
@@ -68,6 +87,7 @@ teardown() {
     [ "${status}" -eq 0 ]
     [[ "${output}" =~ "Kubernetes Diagnostics" ]]
     ! [[ "${output}" =~ "Pixie Diagnostics" ]]
+    ! [[ "${output}" =~ "eBPF Agent Diagnostics" ]]
 }
 
 @test "-p runs only Pixie diagnostics" {
@@ -75,13 +95,39 @@ teardown() {
     [ "${status}" -eq 0 ]
     [[ "${output}" =~ "Pixie Diagnostics" ]]
     ! [[ "${output}" =~ "Kubernetes Diagnostics" ]]
+    ! [[ "${output}" =~ "eBPF Agent Diagnostics" ]]
 }
 
-@test "-k and -p together runs both diagnostics" {
+@test "-e runs only eBPF agent diagnostics" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    [[ "${output}" =~ "eBPF Agent Diagnostics" ]]
+    ! [[ "${output}" =~ "Kubernetes Diagnostics" ]]
+    ! [[ "${output}" =~ "Pixie Diagnostics" ]]
+}
+
+@test "-k and -p together runs kube and pixie only" {
     run bash "${SCRIPT}" -n newrelic -k -p
     [ "${status}" -eq 0 ]
     [[ "${output}" =~ "Kubernetes Diagnostics" ]]
     [[ "${output}" =~ "Pixie Diagnostics" ]]
+    ! [[ "${output}" =~ "eBPF Agent Diagnostics" ]]
+}
+
+@test "-k and -e together runs kube and eBPF only" {
+    run bash "${SCRIPT}" -n newrelic -k -e
+    [ "${status}" -eq 0 ]
+    [[ "${output}" =~ "Kubernetes Diagnostics" ]]
+    [[ "${output}" =~ "eBPF Agent Diagnostics" ]]
+    ! [[ "${output}" =~ "Pixie Diagnostics" ]]
+}
+
+@test "-k -p -e together runs all three diagnostics" {
+    run bash "${SCRIPT}" -n newrelic -k -p -e
+    [ "${status}" -eq 0 ]
+    [[ "${output}" =~ "Kubernetes Diagnostics" ]]
+    [[ "${output}" =~ "Pixie Diagnostics" ]]
+    [[ "${output}" =~ "eBPF Agent Diagnostics" ]]
 }
 
 # ── Namespace validation ───────────────────────────────────────────────────────
@@ -117,6 +163,14 @@ teardown() {
 
 @test "pixie mode creates a tar.gz archive" {
     run bash "${SCRIPT}" -n newrelic -p
+    [ "${status}" -eq 0 ]
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    [ -n "${archive}" ]
+}
+
+@test "eBPF mode creates a tar.gz archive" {
+    run bash "${SCRIPT}" -n newrelic -e
     [ "${status}" -eq 0 ]
     local archive
     archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
@@ -185,14 +239,85 @@ teardown() {
     [[ "${contents}" =~ "12_pixie_node_info.log" ]]
 }
 
-@test "combined archive contains both kube and pixie files" {
-    run bash "${SCRIPT}" -n newrelic -k -p
+@test "eBPF archive contains daemonset status file" {
+    run bash "${SCRIPT}" -n newrelic -e
     local archive
     archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
     local contents
     contents=$(tar -tzf "${archive}")
-    [[ "${contents}" =~ "01_cluster_info.log" ]]
-    [[ "${contents}" =~ "11_pixie_key_info.log" ]]
+    [[ "${contents}" =~ "16_ebpf_daemonset_status.log" ]]
+}
+
+@test "eBPF archive contains node kernel info file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "17_ebpf_node_kernel_info.log" ]]
+}
+
+@test "eBPF archive contains pod logs file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "18_ebpf_pod_logs.log" ]]
+}
+
+@test "eBPF archive contains describe file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "19_ebpf_describe.log" ]]
+}
+
+@test "eBPF archive contains helm values file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "20_ebpf_helm_values.yaml" ]]
+}
+
+@test "eBPF archive contains rbac file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "21_ebpf_rbac.log" ]]
+}
+
+@test "eBPF archive contains scheduling analysis file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "22_ebpf_scheduling.log" ]]
+}
+
+@test "eBPF archive contains events file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "23_ebpf_events.log" ]]
+}
+
+@test "eBPF archive contains log pattern scan file" {
+    run bash "${SCRIPT}" -n newrelic -e
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "24_ebpf_log_patterns.log" ]]
 }
 
 @test "kube archive does not contain pixie files when -k only" {
@@ -202,6 +327,26 @@ teardown() {
     local contents
     contents=$(tar -tzf "${archive}")
     ! [[ "${contents}" =~ "11_pixie_key_info.log" ]]
+}
+
+@test "kube archive does not contain eBPF files when -k only" {
+    run bash "${SCRIPT}" -n newrelic -k
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    ! [[ "${contents}" =~ "16_ebpf_daemonset_status.log" ]]
+}
+
+@test "combined archive contains kube, pixie, and eBPF files" {
+    run bash "${SCRIPT}" -n newrelic
+    local archive
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    local contents
+    contents=$(tar -tzf "${archive}")
+    [[ "${contents}" =~ "01_cluster_info.log" ]]
+    [[ "${contents}" =~ "11_pixie_key_info.log" ]]
+    [[ "${contents}" =~ "16_ebpf_daemonset_status.log" ]]
 }
 
 # ── Archive file content ──────────────────────────────────────────────────────
@@ -224,6 +369,86 @@ teardown() {
     dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
     tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
     [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/04_nrk8s_logs.log")" =~ "Pod:" ]]
+}
+
+@test "eBPF daemonset status file contains daemonset output" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/16_ebpf_daemonset_status.log")" =~ "nr-ebpf-agent" ]]
+}
+
+@test "eBPF node kernel info file contains kernel version" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/17_ebpf_node_kernel_info.log")" =~ "Kernel" ]]
+}
+
+@test "eBPF pod logs file contains pod log output" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/18_ebpf_pod_logs.log")" =~ "nr-ebpf-agent" ]]
+}
+
+@test "eBPF rbac file contains ClusterRole output" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/21_ebpf_rbac.log")" =~ "ClusterRole" ]]
+}
+
+@test "eBPF scheduling file contains daemonset scheduling summary" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/22_ebpf_scheduling.log")" =~ "Desired" ]]
+}
+
+@test "eBPF scheduling file contains namespace PSA label output" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/22_ebpf_scheduling.log")" =~ "newrelic" ]]
+}
+
+@test "eBPF events file contains events output" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/23_ebpf_events.log")" =~ "nr-ebpf-agent" ]]
+}
+
+@test "eBPF node kernel info file contains BTF analysis" {
+    run bash "${SCRIPT}" -n newrelic -e
+    [ "${status}" -eq 0 ]
+    local archive dir_name
+    archive=$(ls "${BATS_TEST_TMPDIR}"/nrk8s_diag_*.tar.gz 2>/dev/null | head -1)
+    dir_name=$(tar -tzf "${archive}" | head -1 | tr -d '/')
+    tar -xzf "${archive}" -C "${BATS_TEST_TMPDIR}"
+    [[ "$(cat "${BATS_TEST_TMPDIR}/${dir_name}/17_ebpf_node_kernel_info.log")" =~ "BTF" ]]
 }
 
 # ── Temp directory cleanup ─────────────────────────────────────────────────────
