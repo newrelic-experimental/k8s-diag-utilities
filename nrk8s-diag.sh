@@ -501,14 +501,10 @@ gather_ebpf_daemonset_status() {
             --field-selector=status.phase!=Running,status.phase!=Succeeded \
             || printf "All eBPF agent pods are Running or Succeeded.\n"
 
-        printf "\nContainer status per pod:\n"
+        printf "\nContainer status and crash history per pod:\n"
+        printf "(OOMKilled in lastTerminated indicates TABLE_STORE_DATA_LIMIT_MB is too low)\n"
         kubectl get pods -n "${NAMESPACE}" -l app=nr-ebpf-agent \
-            -o jsonpath='{range .items[*]}Pod: {.metadata.name}{"\n"}{range .status.initContainerStatuses[*]}  Init [{.name}]: ready={.ready} restarts={.restartCount}{"\n"}{end}{range .status.containerStatuses[*]}  Container [{.name}]: ready={.ready} restarts={.restartCount}{"\n"}{end}{end}' \
-            || true
-
-        printf "\nOOMKill / crash history (OOMKilled eBPF agents indicate TABLE_STORE_DATA_LIMIT_MB is too low):\n"
-        kubectl get pods -n "${NAMESPACE}" -l app=nr-ebpf-agent \
-            -o jsonpath='{range .items[*]}Pod: {.metadata.name}{"\n"}{range .status.initContainerStatuses[*]}  Init [{.name}]: lastTerminated={.lastState.terminated.reason} exitCode={.lastState.terminated.exitCode}{"\n"}{end}{range .status.containerStatuses[*]}  [{.name}]: lastTerminated={.lastState.terminated.reason} exitCode={.lastState.terminated.exitCode}{"\n"}{end}{end}' \
+            -o jsonpath='{range .items[*]}Pod: {.metadata.name}{"\n"}{range .status.initContainerStatuses[*]}  Init [{.name}]: ready={.ready} restarts={.restartCount} lastTerminated={.lastState.terminated.reason}{"\n"}{end}{range .status.containerStatuses[*]}  [{.name}]: ready={.ready} restarts={.restartCount} lastTerminated={.lastState.terminated.reason}{"\n"}{end}{end}' \
             || true
     } >> "${EBPF_DAEMONSET_FILE}" 2>&1
 }
@@ -516,29 +512,31 @@ gather_ebpf_daemonset_status() {
 gather_ebpf_node_kernel_info() {
     my_banner "eBPF Node Kernel Information → $(basename "${EBPF_NODE_KERNEL_FILE}")"
     {
+        # Single API call — tab-separated: name, kernel, os, arch, runtime
+        local node_data
+        node_data=$(kubectl get nodes \
+            -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.nodeInfo.kernelVersion}{"\t"}{.status.nodeInfo.osImage}{"\t"}{.status.nodeInfo.architecture}{"\t"}{.status.nodeInfo.containerRuntimeVersion}{"\n"}{end}' \
+            2>/dev/null) || { printf "Failed to retrieve node info.\n"; return; }
+
         printf "Kernel versions per node (eBPF agent requires Linux kernel >= 4.14):\n"
-        kubectl get nodes \
-            -o jsonpath='{range .items[*]}Node: {.metadata.name}  Kernel: {.status.nodeInfo.kernelVersion}  OS: {.status.nodeInfo.osImage}  Arch: {.status.nodeInfo.architecture}{"\n"}{end}' \
-            || printf "Failed to retrieve node kernel info.\n"
+        awk -F'\t' '{printf "Node: %-30s  Kernel: %-30s  OS: %-25s  Arch: %s\n", $1, $2, $3, $4}' \
+            <<< "${node_data}"
 
         printf "\nContainer runtime per node:\n"
-        kubectl get nodes \
-            -o jsonpath='{range .items[*]}Node: {.metadata.name}  Runtime: {.status.nodeInfo.containerRuntimeVersion}{"\n"}{end}' \
-            || true
+        awk -F'\t' '{printf "Node: %-30s  Runtime: %s\n", $1, $5}' \
+            <<< "${node_data}"
 
         printf "\nBTF/CO-RE availability analysis:\n"
         printf "(kernel >= 5.2 → BTF at /sys/kernel/btf/vmlinux, CO-RE fallback possible without kernel headers)\n"
         printf "(kernel < 5.2  → kernel headers REQUIRED for eBPF agent to function)\n"
         printf "(COS/Bottlerocket/RHCOS: check 18_ebpf_pod_logs.log for installer-specific output)\n\n"
-        kubectl get nodes \
-            -o jsonpath='{range .items[*]}{.metadata.name} {.status.nodeInfo.kernelVersion} {.status.nodeInfo.osImage}{"\n"}{end}' 2>/dev/null \
-        | awk '{
+        awk -F'\t' '{
             n=$1; kv=$2
             split(kv, parts, /[.-]/)
             major=int(parts[1]); minor=int(parts[2])
             btf = (major > 5 || (major == 5 && minor >= 2)) ? "BTF=likely-available" : "BTF=not-available (kernel-headers required)"
             printf "%-40s kernel=%-30s %s\n", n, kv, btf
-        }' || printf "Failed to retrieve node kernel info for BTF analysis.\n"
+        }' <<< "${node_data}"
     } >> "${EBPF_NODE_KERNEL_FILE}" 2>&1
 }
 
@@ -554,23 +552,45 @@ gather_ebpf_pod_logs() {
         return
     fi
 
+    local work_dir
+    work_dir=$(mktemp -d)
+    local job_count=0
+    local max_jobs=10
+
     for pod in ${pods}; do
-        {
-            printf "\n===== Pod: %s =====\n" "${pod}"
+        (
+            {
+                printf "\n===== Pod: %s =====\n" "${pod}"
 
-            printf "\n--- init: kernel-header-installer ---\n"
-            kubectl logs "${pod}" -c kernel-header-installer -n "${NAMESPACE}" 2>/dev/null \
-                || printf "No logs (init container may have completed).\n"
+                printf "\n--- init: kernel-header-installer ---\n"
+                kubectl logs "${pod}" -c kernel-header-installer -n "${NAMESPACE}" 2>/dev/null \
+                    || printf "No logs (init container may have completed).\n"
 
-            printf "\n--- container: nr-ebpf-agent (current) ---\n"
-            kubectl logs "${pod}" -c nr-ebpf-agent -n "${NAMESPACE}" --tail=500 2>/dev/null \
-                || printf "No current logs.\n"
+                printf "\n--- container: nr-ebpf-agent (current) ---\n"
+                kubectl logs "${pod}" -c nr-ebpf-agent -n "${NAMESPACE}" --tail=500 2>/dev/null \
+                    || printf "No current logs.\n"
 
-            printf "\n--- container: nr-ebpf-agent (previous) ---\n"
-            kubectl logs --previous "${pod}" -c nr-ebpf-agent -n "${NAMESPACE}" --tail=500 2>/dev/null \
-                || printf "No previous logs.\n"
-        } >> "${EBPF_LOGS_FILE}" 2>&1
+                printf "\n--- container: nr-ebpf-agent (previous) ---\n"
+                kubectl logs --previous "${pod}" -c nr-ebpf-agent -n "${NAMESPACE}" --tail=500 2>/dev/null \
+                    || printf "No previous logs.\n"
+            } > "${work_dir}/${pod}.log" 2>&1
+        ) &
+
+        job_count=$(( job_count + 1 ))
+        if [[ ${job_count} -ge ${max_jobs} ]]; then
+            wait
+            job_count=0
+        fi
     done
+    wait
+
+    {
+        for f in $(find "${work_dir}" -name "*.log" -type f | sort); do
+            cat "${f}"
+        done
+    } >> "${EBPF_LOGS_FILE}" 2>&1
+
+    rm -rf "${work_dir}"
 }
 
 describe_ebpf_resources() {
@@ -587,16 +607,38 @@ describe_ebpf_resources() {
         printf "\n=== ConfigMaps ===\n"
         kubectl get configmap -n "${NAMESPACE}" -l app=nr-ebpf-agent -o yaml 2>/dev/null \
             || printf "No nr-ebpf-agent ConfigMaps found.\n"
+    } >> "${EBPF_DESCRIBE_FILE}" 2>&1
 
+    local pods
+    pods=$(kubectl get pods -n "${NAMESPACE}" -l app=nr-ebpf-agent \
+        --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true)
+    [[ -z "${pods}" ]] && return
+
+    local work_dir
+    work_dir=$(mktemp -d)
+    local job_count=0
+    local max_jobs=10
+
+    for pod in ${pods}; do
+        (
+            {
+                printf "\n--- Pod: %s ---\n" "${pod}"
+                kubectl describe pod "${pod}" -n "${NAMESPACE}"
+            } > "${work_dir}/${pod}.log" 2>&1
+        ) &
+        job_count=$(( job_count + 1 ))
+        if [[ ${job_count} -ge ${max_jobs} ]]; then wait; job_count=0; fi
+    done
+    wait
+
+    {
         printf "\n=== Pods ===\n"
-        local pods
-        pods=$(kubectl get pods -n "${NAMESPACE}" -l app=nr-ebpf-agent \
-            --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true)
-        for pod in ${pods}; do
-            printf "\n--- Pod: %s ---\n" "${pod}"
-            kubectl describe pod "${pod}" -n "${NAMESPACE}"
+        for f in $(find "${work_dir}" -name "*.log" -type f | sort); do
+            cat "${f}"
         done
     } >> "${EBPF_DESCRIBE_FILE}" 2>&1
+
+    rm -rf "${work_dir}"
 }
 
 get_ebpf_helm_values() {
@@ -667,23 +709,45 @@ gather_ebpf_events() {
             --field-selector involvedObject.name=nr-ebpf-agent \
             --sort-by='.lastTimestamp' 2>/dev/null \
             || printf "No events found for nr-ebpf-agent DaemonSet.\n"
+    } >> "${EBPF_EVENTS_FILE}" 2>&1
 
-        printf "\nEvents for nr-ebpf-agent pods:\n"
-        local pods
-        pods=$(kubectl get pods -n "${NAMESPACE}" -l app=nr-ebpf-agent \
-            --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true)
-        if [[ -z "${pods}" ]]; then
-            printf "No nr-ebpf-agent pods found.\n"
-        else
-            for pod in ${pods}; do
+    local pods
+    pods=$(kubectl get pods -n "${NAMESPACE}" -l app=nr-ebpf-agent \
+        --no-headers -o custom-columns=":metadata.name" 2>/dev/null || true)
+
+    if [[ -z "${pods}" ]]; then
+        printf "\nNo nr-ebpf-agent pods found.\n" >> "${EBPF_EVENTS_FILE}"
+        return
+    fi
+
+    local work_dir
+    work_dir=$(mktemp -d)
+    local job_count=0
+    local max_jobs=10
+
+    for pod in ${pods}; do
+        (
+            {
                 printf "\n--- Pod: %s ---\n" "${pod}"
                 kubectl get events -n "${NAMESPACE}" \
                     --field-selector "involvedObject.name=${pod}" \
                     --sort-by='.lastTimestamp' 2>/dev/null \
                     || printf "No events found.\n"
-            done
-        fi
+            } > "${work_dir}/${pod}.log" 2>&1
+        ) &
+        job_count=$(( job_count + 1 ))
+        if [[ ${job_count} -ge ${max_jobs} ]]; then wait; job_count=0; fi
+    done
+    wait
+
+    {
+        printf "\nEvents for nr-ebpf-agent pods:\n"
+        for f in $(find "${work_dir}" -name "*.log" -type f | sort); do
+            cat "${f}"
+        done
     } >> "${EBPF_EVENTS_FILE}" 2>&1
+
+    rm -rf "${work_dir}"
 }
 
 scan_ebpf_log_patterns() {
