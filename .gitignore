@@ -2,6 +2,8 @@
 .claude/
 CLAUDE.md
 TODO.md
+kanban-import.csv
+kanban-import.json
 
 # Test artifacts
 tests/*.tap
